@@ -4,6 +4,23 @@
 
 基于 [learn2018-autodown](https://github.com/Trinkle23897/learn2018-autodown) 的浏览器登录与助教端 API 改造。
 
+## 目录结构
+
+代码仓库与课程数据分离，推荐布局：
+
+```
+Essays/                      # 工作区根目录（非 git 仓库）
+├── TA-auto-grader/          # 本仓库（git clone 到此）
+│   ├── main.py
+│   ├── .env                 # 本地配置（git 忽略）
+│   └── ...
+├── downloads/               # 学生作业与 feedback（git 忽略）
+│   └── Essay1/
+└── templates/               # 分数汇总等课程模板（git 忽略）
+```
+
+所有命令在 `TA-auto-grader/` 目录下运行；未设置环境变量时，程序默认读写上级目录的 `downloads/` 与 `templates/`。
+
 ## 功能
 
 | 模块 | 说明 |
@@ -42,13 +59,14 @@ THU_PASSWORD=你的密码
 
 ```env
 THU_ASSIGNMENT_URL=https://learn.tsinghua.edu.cn/f/wlxt/kczy/xszy/teacher/beforePageList?wlkcid=...&zyid=...
-THU_DOWNLOAD_DIR=./downloads
+THU_DOWNLOAD_DIR=../downloads
+THU_TEMPLATES_DIR=../templates
 YUKETANG_WORKSPACE_ID=...
 YUKETANG_RULE_ID=...
 YUKETANG_FORM_RULE_ID=...
 ```
 
-**3. 课程模板（可选，仅本地）** — 将分数汇总 xlsx 等参考文件放入 `templates/`，该目录不会提交到 git。
+**3. 课程模板（可选，仅本地）** — 将分数汇总 xlsx 等放入工作区根目录的 `templates/`（与仓库同级，不在 git 中）。
 
 ## 使用
 
@@ -65,7 +83,7 @@ uv run python main.py yuketang-login    # 雨课堂（微信扫码）
 uv run python main.py download
 ```
 
-下载结构：`downloads/<作业名>/{学号}_{姓名}/` + `submissions.csv`
+下载结构：`../downloads/<作业名>/{学号}_{姓名}/` + `submissions.csv`
 
 ### 雨课堂 AI 批改
 
@@ -82,7 +100,7 @@ feedback 保存为 `{原稿名}_feedback.docx`。文件名含 `#` 的 docx 上�
 
 ```bash
 uv run python fix_feedback_alignment.py --dry-run
-uv run python fix_feedback_alignment.py --dir downloads/<作业名>
+uv run python fix_feedback_alignment.py --dir ../downloads/<作业名>
 ```
 
 ### 回传成绩

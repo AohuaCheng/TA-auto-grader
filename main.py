@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from credentials import get_credentials, load_credentials
 from file_utils import postprocess_download_dir
 from learn_client import LearnTAClient, parse_assignment_url
+from paths import download_root
 from login_manager import BrowserLoginManager
 from yuketang_client import DEFAULT_SESSION_FILE, YuketangBrowser
 from yuketang_grader import run_grading
@@ -75,7 +76,7 @@ def cmd_download(args: argparse.Namespace) -> None:
         print("请通过 --url 或环境变量 THU_ASSIGNMENT_URL 指定作业页面。")
         sys.exit(1)
 
-    output_root = Path(args.output or os.getenv("THU_DOWNLOAD_DIR", "./downloads"))
+    output_root = Path(args.output) if args.output else download_root()
 
     session, manager = get_session(Path(args.session), relogin=args.relogin)
     try:
@@ -192,9 +193,8 @@ def _resolve_assignment_dir(
 
 
 def cmd_grade(args: argparse.Namespace) -> None:
-    download_root = Path(os.getenv("THU_DOWNLOAD_DIR", "./downloads"))
     download_dir = _resolve_assignment_dir(
-        download_root, args.dir, args.url, Path(args.session_learn)
+        download_root(), args.dir, args.url, Path(args.session_learn)
     )
 
     if not download_dir.exists():
@@ -221,7 +221,7 @@ def cmd_postprocess(args: argparse.Namespace) -> None:
         if not assignment_url:
             print("请通过 --dir 或 --url / THU_ASSIGNMENT_URL 指定下载目录。")
             sys.exit(1)
-        output_root = Path(os.getenv("THU_DOWNLOAD_DIR", "./downloads"))
+        output_root = download_root()
         session, manager = get_session(Path(args.session), relogin=args.relogin)
         try:
             client = LearnTAClient(session)

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import shutil
 import sys
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from paths import download_root
 from topic_detector import extract_docx_text
 from yuketang_grader import (
     PROGRESS_FILE,
@@ -29,7 +29,7 @@ load_dotenv()
 def resolve_download_dir(explicit: str | None) -> Path:
     if explicit:
         return Path(explicit)
-    root = Path(os.getenv("THU_DOWNLOAD_DIR", "./downloads"))
+    root = download_root()
     if root.is_dir() and any(root.iterdir()):
         subdirs = sorted(p for p in root.iterdir() if p.is_dir())
         if len(subdirs) == 1:
