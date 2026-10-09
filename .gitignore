@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 凭据与会话（勿提交）
+.env
+credentials.local.env
+session.json
+yuketang_session.json
+
+# 学生作业与批改结果（体积大、含隐私）
+downloads/
+
+# 批改进度（本地状态，随 downloads 重建）
+grading_progress.json
+
+# 调试与开发录制
+debug_*
+recordings/
+
+# 课程模板与样例（含课程内部信息，仅保留本地）
+templates/
+
+# 系统文件
+.DS_Store
