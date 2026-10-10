@@ -15,6 +15,7 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -63,6 +64,45 @@ class BrowserLoginManager:
         lowered = url.lower()
         return "learn.tsinghua.edu.cn" in lowered and "login" not in lowered
 
+    def _click_login_button(self, password_input=None) -> bool:
+        """Click Tsinghua SSO login control (anchor with doLogin(), not submit button)."""
+        selectors = (
+            (By.CSS_SELECTOR, "a[onclick*='doLogin']"),
+            (By.XPATH, "//a[contains(@onclick, 'doLogin')]"),
+            (By.XPATH, "//a[contains(normalize-space(.), '登录')]"),
+            (By.ID, "login_button"),
+            (By.CSS_SELECTOR, "button[type='submit']"),
+            (By.CSS_SELECTOR, "input[type='submit']"),
+        )
+        for selector in selectors:
+            try:
+                button = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable(selector)
+                )
+                button.click()
+                self._log("已点击登录按钮。")
+                return True
+            except Exception:
+                continue
+
+        try:
+            self.driver.execute_script("if (typeof doLogin === 'function') doLogin();")
+            self._log("已通过 JavaScript 调用 doLogin()。")
+            return True
+        except Exception:
+            pass
+
+        if password_input is not None:
+            try:
+                password_input.send_keys(Keys.RETURN)
+                self._log("已在密码框发送 Enter 键提交登录。")
+                return True
+            except Exception:
+                pass
+
+        self._log("未能自动点击登录按钮，请在浏览器中手动点击「登录」。")
+        return False
+
     def _fill_login_form(self) -> None:
         username = (self.username or "").strip()
         password = (self.password or "").strip()
@@ -77,6 +117,7 @@ class BrowserLoginManager:
             self._log("未配置账号密码，请在浏览器中手动登录。")
             return
 
+        password_input = None
         try:
             if username:
                 username_input = WebDriverWait(self.driver, 10).until(
@@ -87,24 +128,16 @@ class BrowserLoginManager:
                 self._log(f"已自动填入用户名: {username}")
 
             if password:
-                password_input = self.driver.find_element(By.ID, "i_pass")
+                password_input = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "i_pass"))
+                )
                 password_input.clear()
                 password_input.send_keys(password)
                 self._log("已自动填入密码。")
 
             if username and password:
-                for selector in (
-                    (By.ID, "login_button"),
-                    (By.CSS_SELECTOR, "button[type='submit']"),
-                    (By.CSS_SELECTOR, "input[type='submit']"),
-                ):
-                    try:
-                        button = self.driver.find_element(*selector)
-                        button.click()
-                        self._log("已点击登录按钮。")
-                        break
-                    except Exception:
-                        continue
+                time.sleep(0.5)
+                self._click_login_button(password_input)
         except TimeoutException:
             self._log("未能自动填写登录表单，请在浏览器中手动完成。")
 

@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from credentials import get_credentials, load_credentials
 from file_utils import postprocess_download_dir
 from learn_client import LearnTAClient, parse_assignment_url
+from export_score_summary import export_score_summary
+from format_feedback import run_format_feedback
+from annotate_word_count import annotate_word_count
+from prepare_learn_upload import prepare_upload_csv
 from paths import download_root
 from login_manager import BrowserLoginManager
 from yuketang_client import DEFAULT_SESSION_FILE, YuketangBrowser
@@ -92,6 +96,38 @@ def cmd_download(args: argparse.Namespace) -> None:
         print(f"全部下载完成，目录: {output_dir}")
     finally:
         manager.close()
+
+
+def cmd_annotate_word_count(args: argparse.Namespace) -> None:
+    if args.dir:
+        assignment_dir = Path(args.dir)
+    else:
+        assignment_dir = download_root() / "Essay1"
+
+    scores = Path(args.scores) if args.scores else download_root() / "Minc2026Essays分数汇总.xlsx"
+    annotate_word_count(
+        score_xlsx=scores,
+        assignment_dir=assignment_dir,
+        min_words=args.min_words,
+        max_words=args.max_words,
+    )
+
+
+def cmd_prepare_upload(args: argparse.Namespace) -> None:
+    if args.dir:
+        assignment_dir = Path(args.dir)
+    else:
+        assignment_dir = download_root() / "Essay1"
+
+    scores = Path(args.scores) if args.scores else download_root() / "Minc2026Essays分数汇总.xlsx"
+    output = Path(args.output) if args.output else assignment_dir / "learn_upload.csv"
+
+    prepare_upload_csv(
+        score_xlsx=scores,
+        assignment_dir=assignment_dir,
+        output_csv=output,
+        default_wlkcid=args.wlkcid,
+    )
 
 
 def cmd_upload(args: argparse.Namespace) -> None:
@@ -211,6 +247,47 @@ def cmd_grade(args: argparse.Namespace) -> None:
         regrade_only=args.regrade_only,
         sanitize_hash=args.sanitize_hash,
     )
+
+
+def cmd_export_scores(args: argparse.Namespace) -> None:
+    if args.dir:
+        download_dir = Path(args.dir)
+    else:
+        download_dir = _resolve_assignment_dir(
+            download_root(), None, args.url, Path(args.session)
+        )
+    if not download_dir.exists():
+        print(f"找不到目录: {download_dir}")
+        sys.exit(1)
+
+    template = Path(args.template) if args.template else None
+    output = Path(args.output) if args.output else None
+    path = export_score_summary(download_dir, template=template, output_path=output)
+    print(f"已生成: {path}")
+
+
+def cmd_format_feedback(args: argparse.Namespace) -> None:
+    if args.dir:
+        download_dir = Path(args.dir)
+    else:
+        download_dir = _resolve_assignment_dir(
+            download_root(), None, args.url, Path(args.session)
+        )
+    if not download_dir.exists():
+        print(f"找不到目录: {download_dir}")
+        sys.exit(1)
+
+    template = Path(args.template) if args.template else None
+    results = run_format_feedback(
+        download_dir,
+        template_path=template,
+        student=args.student or "",
+        dry_run=args.dry_run,
+    )
+    ok = sum(1 for _, status in results if status.startswith(("已生成", "预览")))
+    print(f"处理: {ok}/{len(results)}")
+    for path, status in results:
+        print(f"  {path.parent.name}/{path.name}: {status}")
 
 
 def cmd_postprocess(args: argparse.Namespace) -> None:
@@ -401,6 +478,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="雨课堂会话文件",
     )
     p_probe.set_defaults(func=cmd_grade_probe)
+
+    p_scores = sub.add_parser(
+        "export-scores",
+        help="导出 Essay 1 第一次批改分数汇总 xlsx（含 Topic 列）",
+    )
+    p_scores.add_argument("--dir", help="作业目录")
+    p_scores.add_argument("--url", help="网络学堂作业 URL，用于定位下载目录")
+    p_scores.add_argument(
+        "--session-learn",
+        default="session.json",
+        help="网络学堂 session（配合 --url 使用）",
+    )
+    p_scores.add_argument("--template", help="分数汇总模板 xlsx")
+    p_scores.add_argument("--output", help="输出文件路径")
+    p_scores.set_defaults(func=cmd_export_scores)
+
+    p_format = sub.add_parser(
+        "format-feedback",
+        help="从 feedback 提取 Review Comments，生成 Firstround_feedback_学号.docx",
+    )
+    p_format.add_argument("--dir", help="作业目录")
+    p_format.add_argument("--url", help="网络学堂作业 URL，用于定位下载目录")
+    p_format.add_argument(
+        "--session-learn",
+        default="session.json",
+        help="网络学堂 session（配合 --url 使用）",
+    )
+    p_format.add_argument(
+        "--template",
+        help="上传模板 docx（默认 ../templates/仅反馈样例 这样上传至网络学堂.docx）",
+    )
+    p_format.add_argument("--student", help="仅处理指定学号/姓名")
+    p_format.add_argument("--dry-run", action="store_true")
+    p_format.set_defaults(func=cmd_format_feedback)
+
+    p_wordcount = sub.add_parser(
+        "annotate-word-count",
+        help="在分数汇总 xlsx 中标注论文字数（不含题目与参考文献）",
+    )
+    p_wordcount.add_argument(
+        "--scores",
+        help="分数汇总 xlsx（默认 downloads/Minc2026Essays分数汇总.xlsx）",
+    )
+    p_wordcount.add_argument("--dir", help="作业目录（默认 downloads/Essay1）")
+    p_wordcount.add_argument("--min-words", type=int, default=800)
+    p_wordcount.add_argument("--max-words", type=int, default=1000)
+    p_wordcount.set_defaults(func=cmd_annotate_word_count)
+
+    p_prep = sub.add_parser(
+        "prepare-upload",
+        help="从分数汇总 xlsx 生成网络学堂批阅上传 CSV",
+    )
+    p_prep.add_argument(
+        "--scores",
+        help="分数汇总 xlsx（默认 downloads/Minc2026Essays分数汇总.xlsx）",
+    )
+    p_prep.add_argument("--dir", help="作业目录（默认 downloads/Essay1）")
+    p_prep.add_argument("--output", help="输出 CSV（默认 作业目录/learn_upload.csv）")
+    p_prep.add_argument("--wlkcid", help="默认 wlkcid")
+    p_prep.set_defaults(func=cmd_prepare_upload)
 
     p_upload = sub.add_parser("upload", help="从 CSV 批量上传批改结果")
     p_upload.add_argument(

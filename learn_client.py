@@ -363,7 +363,9 @@ class LearnTAClient:
                 )
         print(f"提交清单已写入 {manifest_path}")
 
-    def _extract_grade_form(self, page_html: str) -> tuple[str, dict[str, str], list[str]]:
+    def _extract_grade_form(
+        self, page_html: str
+    ) -> tuple[str, dict[str, str], list[str], dict[str, str]]:
         soup = BeautifulSoup(page_html, "html.parser")
         form = soup.find("form")
         if not form:
@@ -377,6 +379,7 @@ class LearnTAClient:
 
         fields: dict[str, str] = {}
         file_fields: list[str] = []
+        checkbox_fields: dict[str, str] = {}
         for inp in form.find_all(["input", "textarea", "select"]):
             name = inp.get("name")
             if not name:
@@ -389,6 +392,8 @@ class LearnTAClient:
             elif tag == "select":
                 selected = inp.find("option", selected=True) or inp.find("option")
                 fields[name] = selected.get("value", "") if selected else ""
+            elif input_type == "checkbox":
+                checkbox_fields[name] = inp.get("value", "1")
             elif input_type in ("submit", "button", "file", "reset"):
                 if input_type == "file":
                     file_fields.append(name)
@@ -398,7 +403,29 @@ class LearnTAClient:
 
         if not action:
             action = _build_url("/b/wlxt/kczy/xszy/teacher/piYue")
-        return action, fields, file_fields
+        return action, fields, file_fields, checkbox_fields
+
+    def _detect_excellent_field(self, page_html: str) -> tuple[str, str] | None:
+        """Return (field_name, checked_value) for the excellent-homework control."""
+        soup = BeautifulSoup(page_html, "html.parser")
+
+        # MINC / wlxt grading form: checkbox name=ktzt, value=X ("设为优秀作业").
+        ktzt = soup.find("input", {"name": "ktzt", "type": "checkbox"})
+        if ktzt is not None:
+            return "ktzt", ktzt.get("value", "X")
+
+        for node in soup.find_all(string=re.compile(r"优秀作业")):
+            parent = node.find_parent(["tr", "div", "label", "li", "td", "span"])
+            if not parent:
+                continue
+            for inp in parent.find_all("input"):
+                name = inp.get("name")
+                if not name:
+                    continue
+                input_type = (inp.get("type") or "").lower()
+                if input_type == "checkbox":
+                    return name, inp.get("value", "X")
+        return None
 
     def upload_grade(
         self,
@@ -408,12 +435,13 @@ class LearnTAClient:
         score: str | None = None,
         comment: str | None = None,
         attachment: Path | None = None,
+        excellent: bool = False,
         dry_run: bool = True,
     ) -> dict[str, Any]:
         page_html = self._get_html(
             f"/f/wlxt/kczy/xszy/teacher/beforePiYue?wlkcid={wlkcid}&xszyid={xszyid}"
         )
-        action, fields, file_fields = self._extract_grade_form(page_html)
+        action, fields, file_fields, checkbox_fields = self._extract_grade_form(page_html)
 
         score_keys = ["cj", "zycj", "score"]
         comment_keys = ["pynr", "py", "bz", "comment", "zynr"]
@@ -434,6 +462,26 @@ class LearnTAClient:
             else:
                 fields["pynr"] = comment
 
+        excellent_field = self._detect_excellent_field(page_html)
+        if excellent:
+            if excellent_field:
+                field_name, field_value = excellent_field
+                fields[field_name] = field_value
+            elif checkbox_fields:
+                field_name = next(iter(checkbox_fields))
+                fields[field_name] = checkbox_fields[field_name]
+            # Server-side flag toggled by the UI when marking excellent homework.
+            fields["sfyx"] = "是"
+            soup = BeautifulSoup(page_html, "html.parser")
+            initmxdx = soup.find("input", id="initmxdx")
+            initmxdxmc = soup.find("input", id="initmxdxmc")
+            if initmxdx and initmxdx.get("value"):
+                fields.setdefault("yxzsfw", initmxdx["value"])
+                fields.setdefault("mxdx", initmxdx["value"])
+            if initmxdxmc and initmxdxmc.get("value"):
+                fields.setdefault("mxdxmc", initmxdxmc["value"])
+            fields.setdefault("sfzm", "是")
+
         files = None
         if attachment and attachment.exists():
             if not file_fields:
@@ -446,6 +494,7 @@ class LearnTAClient:
                 "action": action,
                 "fields": fields,
                 "files": list(files.keys()) if files else [],
+                "excellent_field": excellent_field,
             }
 
         if files:
@@ -460,6 +509,7 @@ class LearnTAClient:
             "status_code": resp.status_code,
             "success": success,
             "response_preview": resp.text[:500],
+            "excellent_field": excellent_field,
         }
 
     def batch_upload_grades(
@@ -494,6 +544,8 @@ class LearnTAClient:
             comment = row.get("评语") or row.get("comment")
             attachment_raw = row.get("附件") or row.get("attachment")
             attachment = Path(attachment_raw) if attachment_raw else None
+            excellent_raw = row.get("优秀作业") or row.get("excellent") or ""
+            excellent = str(excellent_raw).strip() in {"1", "true", "True", "yes", "Y"}
 
             result = self.upload_grade(
                 wlkcid=wlkcid,
@@ -501,6 +553,7 @@ class LearnTAClient:
                 score=score,
                 comment=comment,
                 attachment=attachment,
+                excellent=excellent,
                 dry_run=dry_run,
             )
             student_id = row.get("学号") or row.get("student_id") or ""

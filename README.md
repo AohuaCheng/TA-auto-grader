@@ -25,8 +25,10 @@ Essays/                      # 工作区根目录（非 git 仓库）
 
 | 模块 | 说明 |
 |------|------|
-| 网络学堂 | 批量下载提交、查看名单、CSV 批量回传成绩 |
+| 网络学堂 | 批量下载提交、查看名单、CSV 批量回传成绩与评语附件 |
 | 雨课堂 | Reflective 规则 AI 批改，自动下载 feedback docx |
+| 分数汇总 | 从 feedback 导出 xlsx、生成 Firstround 反馈 docx |
+| 字数检查 | 统计正文词数（不含题目与参考文献），标注超出范围 |
 | 修复工具 | 批量批改后 feedback 错位时，按正文相似度重新对齐 |
 
 ## 安装
@@ -103,14 +105,27 @@ uv run python fix_feedback_alignment.py --dry-run
 uv run python fix_feedback_alignment.py --dir ../downloads/<作业名>
 ```
 
-### 回传成绩
+### 分数汇总与 Firstround 反馈
 
 ```bash
-uv run python main.py upload --grades grades.csv
-uv run python main.py upload --grades grades.csv --confirm
+uv run python main.py export-scores --dir ../downloads/Essay1
+uv run python main.py format-feedback --dir ../downloads/Essay1
+uv run python main.py annotate-word-count   # 在 xlsx 中写入「字数」列并标注超出范围
 ```
 
-CSV 需含 `xszyid`（来自 `submissions.csv`），可选 `成绩`、`评语`、`附件` 列。
+默认输出 `../downloads/Minc2026Essays分数汇总.xlsx`（需 `../templates/` 中的 xlsx 模板）。
+
+### 回传网络学堂批阅
+
+从分数汇总与学生目录生成上传 CSV，再批量提交成绩、英文评语与 Firstround 附件：
+
+```bash
+uv run python main.py prepare-upload
+uv run python main.py upload --grades ../downloads/Essay1/learn_upload.csv          # dry-run
+uv run python main.py upload --grades ../downloads/Essay1/learn_upload.csv --confirm
+```
+
+CSV 需含 `xszyid`（来自 `submissions.csv`），以及 `成绩`、`评语`、`附件`；可选 `优秀作业`（填 `1` 标记优秀作业）。
 
 ## 安全说明
 
